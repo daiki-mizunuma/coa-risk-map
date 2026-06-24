@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>COA リスク等高線図</title>
+<style>
+  :root{
+    --bg:#faf9f5; --surface:#ffffff; --surface-2:#f1efe8;
+    --text:#1f1e1c; --text-2:#5f5e5a; --text-3:#888780;
+    --border:rgba(0,0,0,0.12); --border-2:rgba(0,0,0,0.22);
+    --accent:#26215C; --radius:12px;
+    --low:#97C459; --mid:#EF9F27; --high:#D85A30; --crit:#E24B4A;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#1f1e1c; --surface:#2a2926; --surface-2:#33312d;
+      --text:#f1efe8; --text-2:#b4b2a9; --text-3:#888780;
+      --border:rgba(255,255,255,0.14); --border-2:rgba(255,255,255,0.26);
+      --accent:#AFA9EC;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,sans-serif;
+    line-height:1.7; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:2rem 1.25rem 4rem;}
+  header h1{font-size:24px; font-weight:500; margin:0 0 6px;}
+  header p{color:var(--text-2); font-size:15px; margin:0 0 4px;}
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin:18px 0 12px; font-size:12px; color:var(--text-2);}
+  .legend span{display:flex; align-items:center; gap:5px;}
+  .sw{width:11px; height:11px; border-radius:2px; display:inline-block;}
+  .dash{width:16px; height:0; border-top:1.5px dashed var(--text-2); display:inline-block;}
+  .chartbox{position:relative; width:100%; background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); padding:8px;}
+  canvas{display:block; width:100%;}
+  #over{position:absolute; left:8px; top:8px;}
+  #tip{position:absolute; pointer-events:none; display:none; background:var(--surface); border:0.5px solid var(--border-2); border-radius:8px; padding:6px 9px; font-size:12px; max-width:220px; z-index:5; box-shadow:0 2px 8px rgba(0,0,0,.12);}
+  #tip b{font-weight:500;}
+  .panel{margin-top:14px; background:var(--surface-2); border-radius:var(--radius); padding:14px 16px; min-height:64px;}
+  .panel .ph{font-size:13px; color:var(--text-2);}
+  .panel .pn{font-size:17px; font-weight:500; margin:2px 0;}
+  .panel .pd{font-size:14px; color:var(--text-2);}
+  .panel .ps{display:inline-block; font-size:12px; font-weight:500; padding:2px 9px; border-radius:20px; margin-top:6px; color:#fff;}
+  h2{font-size:17px; font-weight:500; margin:28px 0 10px;}
+  .rows{display:grid; gap:6px;}
+  .row{display:flex; align-items:center; gap:10px; padding:8px 11px; border:0.5px solid var(--border); border-radius:8px; cursor:pointer; background:var(--surface);}
+  .row:hover{background:var(--surface-2);}
+  .num{flex-shrink:0; width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--bg); font-size:12px; display:flex; align-items:center; justify-content:center; font-weight:500;}
+  @media (prefers-color-scheme: dark){ .num{color:#1f1e1c;} }
+  .rname{flex:1; font-size:14px;}
+  .rscore{flex-shrink:0; font-size:13px; font-weight:500;}
+  .adder{margin-top:14px; display:grid; grid-template-columns:1fr 90px 90px auto; gap:8px; align-items:end;}
+  .adder label{font-size:12px; color:var(--text-2); display:block; margin-bottom:3px;}
+  .adder input{width:100%; height:34px; padding:0 9px; font-size:14px; background:var(--surface); color:var(--text); border:0.5px solid var(--border-2); border-radius:8px;}
+  .adder button{height:34px; padding:0 16px; font-size:14px; background:var(--accent); color:var(--bg); border:none; border-radius:8px; cursor:pointer; font-weight:500;}
+  @media (prefers-color-scheme: dark){ .adder button{color:#1f1e1c;} }
+  .note{font-size:12px; color:var(--text-3); margin-top:14px;}
+  @media (max-width:560px){ .adder{grid-template-columns:1fr 1fr; } .adder button{grid-column:1/-1;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>COA リスク等高線図</h1>
+    <p>各 COA（対応案）を「リスク発生可能性 × 影響度」で評価し、優先度を可視化します。</p>
+  </header>
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--low)"></span>低</span>
+    <span><span class="sw" style="background:var(--mid)"></span>中</span>
+    <span><span class="sw" style="background:var(--high)"></span>高</span>
+    <span><span class="sw" style="background:var(--crit)"></span>重大</span>
+    <span><span class="dash"></span>等リスク線</span>
+  </div>
+
+  <div class="chartbox">
+    <canvas id="heat" role="img" aria-label="COAのリスク等高線図。横軸がリスク発生可能性、縦軸が影響度。右上ほど高リスク。"></canvas>
+    <canvas id="over"></canvas>
+    <div id="tip"></div>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="ph">点をクリックまたはホバーで詳細を表示</div>
+  </div>
+
+  <h2>COA 一覧（スコア降順）</h2>
+  <div class="rows" id="rows"></div>
+
+  <div class="adder">
+    <div><label>COA 名</label><input id="aName" type="text" placeholder="新しい対応案" /></div>
+    <div><label>発生可能性</label><input id="aP" type="number" min="0" max="100" value="50" /></div>
+    <div><label>影響度</label><input id="aI" type="number" min="0" max="100" value="50" /></div>
+    <button id="aBtn">追加</button>
+  </div>
+
+  <p class="note">リスクスコア＝発生可能性 × 影響度 ÷ 100。配置・初期値は例示です。値を追加・編集して自分のケースに合わせて利用できます。</p>
+</div>
+
+<script>
+(function(){
+  const heat=document.getElementById('heat'), over=document.getElementById('over');
+  const tip=document.getElementById('tip'), panel=document.getElementById('panel'), rowsEl=document.getElementById('rows');
+  const hctx=heat.getContext('2d'), octx=over.getContext('2d');
+  const M={l:48,r:18,t:14,b:42};
+  const cs=()=>getComputedStyle(document.documentElement);
+
+  const bands=[{max:15,key:'--low',label:'低'},{max:40,key:'--mid',label:'中'},
+               {max:70,key:'--high',label:'高'},{max:101,key:'--crit',label:'重大'}];
+  const col=k=>cs().getPropertyValue(k).trim();
+  function levelOf(s){for(const b of bands){if(s<b.max)return b;}return bands[3];}
+
+  let items=[
+    {p:40,i:45,name:'プレバンキング（事前免疫化）',d:'リスク：効果不確実・空振りの可能性。影響は限定的。'},
+    {p:50,i:70,name:'同盟国との共同声明',d:'リスク：足並みの乱れが露呈すると分断ナラティブを補強。'},
+    {p:60,i:55,name:'戦略的沈黙',d:'リスク：放置で言説が無反証のまま拡散・定着。'},
+    {p:35,i:40,name:'ファクトチェック連携',d:'リスク：速度不足・到達範囲の限界。影響は小さめ。'},
+    {p:55,i:75,name:'プラットフォーム協働（拡散遮断）',d:'リスク：検閲批判・表現の自由をめぐる反発。'},
+    {p:70,i:80,name:'攻勢的カウンターメッセージ',d:'リスク：エスカレーション、自らが情報操作と非難される。'},
+    {p:65,i:85,name:'法的措置・規制',d:'リスク：過剰規制・正統性毀損、国際的批判。'},
+    {p:25,i:30,name:'メディアリテラシー教育',d:'リスク：効果発現が遅い。短期影響は小さい。'}
+  ];
+  const recalc=()=>items.forEach((o,idx)=>{o.n=idx+1; o.s=Math.round(o.p*o.i/100);});
+  recalc();
+
+  let W=700,H=460,plotW,plotH;
+  const px=p=>M.l+(p/100)*plotW, py=i=>M.t+(1-i/100)*plotH;
+
+  function resize(){
+    const cssW=heat.parentElement.clientWidth-16||640;
+    W=cssW; H=Math.round(Math.min(Math.max(cssW*0.66,300),520));
+    const dpr=window.devicePixelRatio||1;
+    [heat,over].forEach(c=>{c.style.height=H+'px';c.style.width=W+'px';c.width=W*dpr;c.height=H*dpr;c.getContext('2d').setTransform(dpr,0,0,dpr,0,0);});
+    plotW=W-M.l-M.r; plotH=H-M.t-M.b;
+    drawHeat(); drawPoints();
+  }
+
+  function drawHeat(){
+    hctx.clearRect(0,0,W,H);
+    const fills=bands.map(b=>col(b.key));
+    const step=4;
+    for(let sx=0;sx<plotW;sx+=step)for(let sy=0;sy<plotH;sy+=step){
+      const p=(sx/plotW)*100, i=(1-sy/plotH)*100, s=p*i/100;
+      let bi=0; for(let k=0;k<bands.length;k++){if(s<bands[k].max){bi=k;break;} bi=3;}
+      hctx.fillStyle=fills[bi]; hctx.globalAlpha=0.72; hctx.fillRect(M.l+sx,M.t+sy,step,step);
+    }
+    hctx.globalAlpha=1;
+    hctx.strokeStyle='rgba(255,255,255,0.85)'; hctx.lineWidth=1.4; hctx.setLineDash([5,4]);
+    [15,30,45,60,75].forEach(c=>{
+      hctx.beginPath(); let st=false;
+      for(let p=1;p<=100;p+=0.5){const i=c*100/p; if(i>100||i<0)continue; const x=px(p),y=py(i); if(!st){hctx.moveTo(x,y);st=true;}else hctx.lineTo(x,y);}
+      hctx.stroke();
+      const pl=Math.max(c,c*100/98), il=c*100/pl;
+      if(il<=99&&pl<=99){hctx.setLineDash([]);hctx.fillStyle='rgba(255,255,255,0.95)';hctx.font='10px sans-serif';hctx.textAlign='center';hctx.textBaseline='middle';hctx.fillText(c,px(pl)-3,py(il)-6);hctx.setLineDash([5,4]);}
+    });
+    hctx.setLineDash([]);
+    const tcol=col('--text-2')||'#777';
+    hctx.strokeStyle=col('--border-2'); hctx.lineWidth=1;
+    hctx.beginPath(); hctx.moveTo(M.l,M.t); hctx.lineTo(M.l,M.t+plotH); hctx.lineTo(M.l+plotW,M.t+plotH); hctx.stroke();
+    hctx.fillStyle=tcol; hctx.font='11px sans-serif';
+    hctx.textAlign='center'; hctx.textBaseline='top';
+    for(let p=0;p<=100;p+=25)hctx.fillText(p,px(p),M.t+plotH+8);
+    hctx.textAlign='right'; hctx.textBaseline='middle';
+    for(let i=0;i<=100;i+=25)hctx.fillText(i,M.l-8,py(i));
+    hctx.save(); hctx.font='12px sans-serif'; hctx.fillStyle=tcol;
+    hctx.textAlign='center'; hctx.fillText('リスク発生可能性 →',M.l+plotW/2,H-6);
+    hctx.translate(13,M.t+plotH/2); hctx.rotate(-Math.PI/2); hctx.fillText('COAの影響度 →',0,0); hctx.restore();
+  }
+
+  let hover=-1, selected=-1;
+  function drawPoints(){
+    octx.clearRect(0,0,W,H);
+    const ac=col('--accent'), bgc=col('--bg');
+    items.forEach((it,idx)=>{
+      const x=px(it.p),y=py(it.i), r=(idx===hover||idx===selected)?13:11;
+      octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2);
+      octx.fillStyle='#fff'; octx.fill();
+      octx.lineWidth=(idx===hover||idx===selected)?3.5:2.5; octx.strokeStyle=ac; octx.stroke();
+      octx.fillStyle=ac; octx.font='600 12px sans-serif';
+      octx.textAlign='center'; octx.textBaseline='middle'; octx.fillText(it.n,x,y);
+    });
+  }
+
+  function showDetail(it){
+    selected=items.indexOf(it); drawPoints();
+    const bd=levelOf(it.s);
+    panel.innerHTML='<div class="ph">'+it.n+'. COA</div>'
+      +'<div class="pn">'+it.name+'</div>'
+      +'<div class="pd">'+it.d+'</div>'
+      +'<span class="ps" style="background:'+col(bd.key)+'">スコア '+it.s+'（'+bd.label+'） ／ 可能性 '+it.p+' × 影響 '+it.i+'</span>';
+  }
+
+  function hit(mx,my){
+    for(let idx=items.length-1;idx>=0;idx--){const x=px(items[idx].p),y=py(items[idx].i); if((mx-x)**2+(my-y)**2<=196)return idx;}
+    return -1;
+  }
+  over.addEventListener('mousemove',e=>{
+    const rc=over.getBoundingClientRect(); const mx=e.clientX-rc.left, my=e.clientY-rc.top;
+    const h=hit(mx,my);
+    if(h!==hover){hover=h; drawPoints();}
+    if(h>=0){const it=items[h]; tip.style.display='block';
+      tip.innerHTML='<b>'+it.n+'. '+it.name+'</b><br>スコア '+it.s+'（'+levelOf(it.s).label+'）';
+      let tx=px(it.p)+16, ty=py(it.i)-10; if(tx>W-200)tx=px(it.p)-200;
+      tip.style.left=(tx+8)+'px'; tip.style.top=Math.max(0,ty+8)+'px';
+      over.style.cursor='pointer';
+    } else {tip.style.display='none'; over.style.cursor='default';}
+  });
+  over.addEventListener('mouseleave',()=>{hover=-1;tip.style.display='none';drawPoints();});
+  over.addEventListener('click',e=>{const rc=over.getBoundingClientRect(); const h=hit(e.clientX-rc.left,e.clientY-rc.top); if(h>=0)showDetail(items[h]);});
+
+  function renderRows(){
+    rowsEl.innerHTML='';
+    items.slice().sort((a,b)=>b.s-a.s).forEach(it=>{
+      const bd=levelOf(it.s);
+      const row=document.createElement('div'); row.className='row';
+      row.innerHTML='<span class="num">'+it.n+'</span><span class="rname">'+it.name+'</span>'
+        +'<span class="rscore" style="color:'+col(bd.key)+'">'+it.s+' '+bd.label+'</span>';
+      row.addEventListener('click',()=>showDetail(it));
+      rowsEl.appendChild(row);
+    });
+  }
+
+  document.getElementById('aBtn').addEventListener('click',()=>{
+    const name=document.getElementById('aName').value.trim()||'新しい COA';
+    let p=+document.getElementById('aP').value, i=+document.getElementById('aI').value;
+    p=Math.max(0,Math.min(100,p||0)); i=Math.max(0,Math.min(100,i||0));
+    items.push({name,p,i,d:'手動で追加された COA。'});
+    recalc(); drawPoints(); renderRows();
+    document.getElementById('aName').value='';
+  });
+
+  window.addEventListener('resize',resize);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{drawHeat();drawPoints();renderRows();});
+  resize(); renderRows();
+})();
+</script>
+</body>
+</html>
